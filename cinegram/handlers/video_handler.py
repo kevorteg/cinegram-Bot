@@ -108,7 +108,20 @@ async def video_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(image_path, 'rb') as photo:
                 await context.bot.send_photo(chat_id=channel_id, photo=photo)
                 
-        # Send Video
+        # Prepare Hashtags
+        hashtag_list = []
+        if genre:
+            # Split by comma usually
+            g_list = [g.strip() for g in genre.split(',')]
+            for g in g_list[:3]: # Max 3
+                # Remove spaces and make it like CamelCase/PascalCase for hashtag
+                # e.g. "Ciencia ficción" -> "CienciaFicción"
+                clean_tag = "".join(word.capitalize() for word in g.split())
+                hashtag_list.append(f"#{clean_tag}")
+                
+        hashtags = " ".join(hashtag_list)
+
+        # Prepare Caption
         caption = (
             f"🎬 *Película:* {title}\n"
             f"📅 *Año:* {year}\n"
@@ -117,6 +130,7 @@ async def video_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⭐ *Calificación:* {rating}\n"
             f"🎭 *Género:* {genre}\n\n"
             f"📝 *Sinopsis:*\n{description[:800]}...\n\n"
+            f"{hashtags}\n\n"
             f"🔗 *Síguenos en Instagram:*"
         )
         

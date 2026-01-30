@@ -12,8 +12,20 @@ class FilenameParser:
         Example: 'Night.of.the.Living.Dead.1968.720p.mkv' -> {'title': 'Night of the Living Dead', 'year': '1968'}
         """
         try:
-            # Guessit magic
-            data = guessit(filename)
+            # Pre-cleaning: Remove explicit spam before Guessit
+            import re
+            
+            # 1. Remove @usernames (e.g. @cesser16)
+            clean_name = re.sub(r'@\w+', '', filename)
+            
+            # 2. Remove URLs
+            clean_name = re.sub(r'https?://\S+|www\.\S+', '', clean_name)
+            
+            # 3. Remove other common spam if needed
+            clean_name = clean_name.replace('_', ' ') # Replace underscores
+            
+            # Guessit magic on cleaned name
+            data = guessit(clean_name)
             
             title = data.get('title')
             year = data.get('year')
