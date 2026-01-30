@@ -35,7 +35,21 @@ class TmdbService:
             results = response.json().get('results', [])
             
             if not results:
-                # RETRY WITH ENGLISH
+                # RETRY 2: Remove common noise suffixes
+                # "Hello Kitty La Pelicula" -> "Hello Kitty"
+                # "Sonic La Pelicula" -> "Sonic"
+                for noise in [" La Pelicula", " La Película", " The Movie", " El Film"]:
+                    if noise.lower() in title.lower():
+                        clean_title = title.lower().replace(noise.lower(), "").strip()
+                        params["query"] = clean_title
+                        params["language"] = "es-MX" # Reset to Spanish
+                        response = requests.get(url, params=params)
+                        results = response.json().get('results', [])
+                        if results: break
+
+            if not results:
+                # RETRY 3: English Search (Original strategy)
+                params["query"] = title # Reset to full title (or should we use clean? try full english first)
                 params["language"] = "en-US"
                 response = requests.get(url, params=params)
                 response.raise_for_status()

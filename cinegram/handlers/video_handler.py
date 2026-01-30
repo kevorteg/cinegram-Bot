@@ -33,7 +33,8 @@ async def video_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await message.reply_text("⚙️ **Procesando video automáticamente...**", parse_mode="Markdown")
 
     file_id = video.file_id
-    filename = video.file_name if hasattr(video, 'file_name') else "Unknown_Movie.mp4"
+    # Fix: getattr might return None, so we must check for truthiness
+    filename = getattr(video, 'file_name', None) or "Unknown_Movie.mp4"
     
     # --- 1. CLEAN TITLE & EXTRACT YEAR (Intelligent) ---
     from cinegram.services.filename_parser import FilenameParser
