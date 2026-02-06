@@ -1,55 +1,55 @@
 # 📖 CineGram Wiki
 
-Bienvenido a la Wiki oficial de **CineGram**. Aquí encontrarás documentación detallada sobre cómo funciona el bot internamente.
+Welcome to the official **CineGram** Wiki. Here you will find detailed documentation on internal mechanics.
 
 ---
 
-## 🛠️ Guía de Solución de Problemas (Troubleshooting)
+## 🛠️ Troubleshooting Guide
 
-### 1. El bot no contesta
-- **Causa**: Probablemente el proceso de Python se detuvo.
-- **Solución**: Revisa la terminal. Si ves un error, cópialo. Asegúrate de tener internet.
+### 1. Bot checks out but never leaves
+- **Cause**: Python process might be hung.
+- **Solution**: Check the terminal. Ensure internet connectivity.
 
-### 2. "TMDB Error" o no encuentra películas
-- **Causa**: API Key inválida o TMDB está bloqueado en tu red.
-- **Solución**: Verifica tu `TMDB_API_KEY` en el archivo `.env`. Prueba reiniciar el router si tienes IP dinámica.
+### 2. "TMDB Error" or no movies found
+- **Cause**: Invalid API Key or TMDB is blocked on your network.
+- **Solution**: Verify `TMDB_API_KEY` in `.env`. Restart router if using dynamic IP.
 
-### 3. La IA no funciona (Deep Search falla)
-- **Causa**: Ollama no está corriendo.
-- **Solución**: Abre una terminal y escribe `ollama serve`. El bot hace un "Health Check" al inicio para avisarte de esto.
+### 3. AI Features not working (Deep Search fails)
+- **Cause**: Ollama is not running.
+- **Solution**: Open terminal and run `ollama serve`. The bot performs a "Health Check" at startup to warn you.
 
-### 4. Las imágenes salen negras
-- **Causa**: Error descargando la imagen de TMDB.
-- **Solución**: El bot tiene un timeout de 10 segundos. Si tu internet es lento, podría fallar. El bot usa un placeholder negro para no romper el flujo.
-
----
-
-## 🧠 Explicación del Flujo de Deep Search
-
-CineGram usa un sistema de 3 capas para identificar películas:
-
-1.  **Filtrado Regex (Rápido)**:
-    - Usa `guessit` para separar "Movie.2024.mp4" en Nombre y Año.
-    - Si funciona y TMDB lo encuentra, termina aquí.
-
-2.  **Limpieza de Spam (Intermedio)**:
-    - Si el nombre tiene palabras como "CUEVANA", "LATINO", "1080p", las elimina agresivamente.
-
-3.  **Inferencia Artificial (Lento pero Preciso)**:
-    - Si nada funciona, le envía el nombre del archivo y tu descripción a **Ollama**.
-    - El prompt del sistema le dice: *"Actúa como un experto en cine. Extrae el título real de este texto basura..."*.
-    - La IA devuelve un JSON limpio: `{"title": "The Matrix", "year": "1999"}`.
+### 4. Black/Empty Posters
+- **Cause**: Timeout downloading image from TMDB.
+- **Solution**: The bot has a 10s timeout. If your net is slow, it might fail. Only a black placeholder is used to prevent crashing.
 
 ---
 
-## 🎨 Sistema de Pósters (Smart Crop)
+## 🧠 Deep Search Logic Explained
 
-Para evitar cortar cabezas en los pósters verticales cuando se pasan a formato horizontal (Youtube/Telegram):
+CineGram uses a 3-layer system to identify movies:
 
-1.  Tomamos la imagen original.
-2.  Creamos un fondo de 1920x1080.
-3.  Estiramos la imagen original para llenar todo el fondo, la desenfocamos (Blur 30px) y la oscurecemos.
-4.  Pegamos la imagen original (sin estirar) en el centro.
-5.  Añadimos el texto y logotipos encima.
+1.  **Regex Filtering (Fast)**:
+    - Uses `guessit` to split "Movie.2024.mp4" into Name and Year.
+    - If valid and found on TMDB, stops here.
 
-Esto garantiza 100% de legibilidad y estética.
+2.  **Spam Cleaning (Intermediate)**:
+    - If name contains "CUEVANA", "LATINO", "1080p", it aggressively strips these terms.
+
+3.  **Artificial Inference (Slow but Precise)**:
+    - If all else fails, it sends the filename and caption to **Ollama**.
+    - System prompt: *"Act as a movie expert. Extract the real title from this garbage text..."*.
+    - AI returns clean JSON: `{"title": "The Matrix", "year": "1999"}`.
+
+---
+
+## 🎨 Smart Poster System
+
+To prevent cropping heads in vertical posters when fitting to horizontal (Youtube/Telegram):
+
+1.  Take original image.
+2.  Create 1920x1080 background.
+3.  Stretch original to fill background, apply Blur (30px) and Darkening.
+4.  Paste original (aspect fit) in center.
+5.  Overlay text and logos.
+
+Ensures 100% readability and premium aesthetics.
