@@ -22,28 +22,61 @@ class ImageGenerator:
             # Create a black placeholder if image download fails
             img = Image.new("RGBA", (1920, 1080), (0, 0, 0, 255))
 
-        # 2. Resize/Crop to 1920x1080 (Aspect Fill)
-        target_size = settings.IMAGE_SIZE
+        # 2. Smart Composition: Blurred Background + Centered Poster
+        target_size = settings.IMAGE_SIZE # (1920, 1080)
+        
+        # A. Create Background (Blurred & Darkened)
+        # Resize to FILL the screen (Aspect Fill)
         img_ratio = img.width / img.height
         target_ratio = target_size[0] / target_size[1]
 
         if img_ratio > target_ratio:
-            # Image is wider, resize by height
-            new_height = target_size[1]
-            new_width = int(new_height * img_ratio)
+            # Image is wider than screen, resize by height
+            bg_height = target_size[1]
+            bg_width = int(bg_height * img_ratio)
         else:
-            # Image is taller, resize by width
-            new_width = target_size[0]
-            new_height = int(new_width / img_ratio)
+            # Image is taller/narrower, resize by width to fill width
+            bg_width = target_size[0]
+            bg_height = int(bg_width / img_ratio)
 
-        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        background = img.resize((bg_width, bg_height), Image.Resampling.LANCZOS)
         
-        # Center Crop
-        left = (img.width - target_size[0]) / 2
-        top = (img.height - target_size[1]) / 2
-        right = (img.width + target_size[0]) / 2
-        bottom = (img.height + target_size[1]) / 2
-        img = img.crop((left, top, right, bottom))
+        # Center Crop the background to fit 1920x1080 exactly
+        left = (background.width - target_size[0]) / 2
+        top = (background.height - target_size[1]) / 2
+        right = (background.width + target_size[0]) / 2
+        bottom = (background.height + target_size[1]) / 2
+        background = background.crop((left, top, right, bottom))
+        
+        # Apply Heavy Blur
+        background = background.filter(ImageFilter.GaussianBlur(30))
+        
+        # Darken Background significantly to make text pop
+        dark_layer = Image.new("RGBA", target_size, (0, 0, 0, 120))
+        background = Image.alpha_composite(background, dark_layer)
+
+        # B. Create Foreground (Fitted Poster)
+        # Resize to FIT inside the screen (Aspect Fit) - maximize height usually
+        # Give it a slight margin so it doesn't touch edges (e.g. 95% height)
+        max_h = int(target_size[1] * 0.95)
+        max_w = int(target_size[0] * 0.95)
+        
+        scale = min(max_w / img.width, max_h / img.height)
+        new_w = int(img.width * scale)
+        new_h = int(img.height * scale)
+        
+        foreground = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        
+        # Paste Foreground Center
+        x_pos = (target_size[0] - new_w) // 2
+        y_pos = (target_size[1] - new_h) // 2
+        
+        # Add shadow to foreground? (Optional, implies creating a larger shadow layer)
+        # For simplicity, just paste.
+        background.paste(foreground, (x_pos, y_pos))
+        
+        # Update main img reference
+        img = background
 
         # 3. Add Dark Overlay (Gradient or solid semi-transparent)
         overlay = Image.new("RGBA", target_size, (0, 0, 0, 0))
