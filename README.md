@@ -1,87 +1,65 @@
-# CineGram Bot
+# 🎬 CineGram Bot
+
+**El bot definitivo para publicación automatizada de películas en Telegram.**
+
+CineGram es un asistente autónomo que procesa archivos de video, identifica qué película son (incluso si el nombre está mal escrito), obtiene su información oficial, traduce la sinopsis y genera pósters profesionales.
 
 ![Python](https://img.shields.io/badge/Python-3.14-blue?style=flat-square&logo=python)
-![Telegram](https://img.shields.io/badge/Telegram-Bot_API-blue?style=flat-square&logo=telegram)
-![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Status](https://img.shields.io/badge/Status-Active-success?style=flat-square)
-
-**Automated Public Domain Movie Publishing Bot for Telegram.**
-
-CineGram autonomously processes video files, extracts metadata, translates synopses, and generates professional posters for Telegram channels.
+![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?style=flat-square&logo=telegram)
+![Status](https://img.shields.io/badge/Estado-Estable-success?style=flat-square)
 
 ---
 
-## Architecture & Features
+## 🚀 Características Principales
 
-This project utilizes a modular architecture designed for stability and autonomy.
+### 🧠 1. CineGram AI (Deep Search)
+El bot cuenta con un cerebro propio (Ollama local) que entra en acción cuando la búsqueda normal falla.
+- **Detector de Spam**: Limpia nombres como *"Pelicula.Completa.Latino.HD.2024.mp4"* para encontrar *"Matrix"*.
+- **Corrector de Errores**: Entiende cosas como *"Abengers Enfgame"* y busca *"Avengers: Endgame"*.
+- **Red de Seguridad (Fallback)**: Si no encuentra nada a la primera, lee la "Descripción" del video para intentar entender de qué película se trata.
 
-*   **AI Deep Search**: Uses **Local AI** to "read" filenames and captions when standard cleaning fails, handling spam and typos intelligently.
-*   **Smart Posters**: Generates cinema-style 16:9 posters with **Blurred Backgrounds** to prevent cropping faces.
-*   **Ghost Mode**: Automatically cleans up the chat by deleting user videos and self-destructing status messages after publishing.
-*   **Metadata Integration**: Fetches real-time data from **TMDB** (The Movie Database).
-*   **AI Translation**: Integrates **Ollama** (running locally) to translate English synopses to Latin American Spanish automatically.
-*   **Strict Validation**: Prevents publishing of incomplete content (missing poster or year).
-*   **Direct Channel Publishing**: bypasses user forwarding and publishes processed content directly to the configured channel.
+### 🎨 2. Pósters Inteligentes (Smart Posters)
+Olvídate de las cabezas recortadas.
+- **Fondo Borroso**: Usa una técnica de diseño profesional donde el póster se muestra completo en el centro, y el fondo se rellena con una versión borrosa y oscura de la misma imagen.
+- **Formato Cine**: Genera imágenes en 1920x1080 listas para canales de alta calidad.
 
-## Installation
+### 👻 3. Modo Fantasma (Ghost Mode)
+Mantiene tu canal y chat limpios.
+- **Auto-Eliminación**: Después de publicar la película en el canal, el bot borra automáticamente el archivo de video que enviaste al chat privado.
+- **Mensajes Temporales**: Los mensajes de estado ("Buscando...", "Generando portada...") se autodestruyen para no ensuciar la conversación.
 
-### Prerequisites
-*   Python 3.9+
-*   [Ollama](https://ollama.com/) (for AI translation)
-*   TMDB API Key
-
-### Setup
-
-1.  **Clone the Repository**
-    ```bash
-    git clone https://github.com/kevorteg/cinegram.git
-    cd cinegram
-    ```
-
-2.  **Install Dependencies**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3.  **Configuration**
-    Copy `.env.example` to `.env` and populate the variables:
-    ```ini
-    BOT_TOKEN=your_telegram_bot_token
-    CHANNEL_ID=-100xxxxxxxxxx
-    TMDB_API_KEY=your_tmdb_key
-    # Optional: AI Model Configuration
-    OLLAMA_MODEL=dolphin-llama3:latest
-    ```
-
-## Usage
-
-1.  **Start the Bot**
-    ```bash
-    python -m cinegram.bot
-    ```
-
-2.  **Interact**
-    *   **Forward a Video**: The bot will auto-clean the title, fetch data, translate the synopsis, and publish to the channel.
-    *   **Search**: Use `/search Movie Name` to find content manualy.
-    *   **Links**: Send an Internet Archive link to process it.
-
-## Development
-
-**Project Structure:**
-```text
-cinegram/
-├── bot.py                  # Entry Point
-├── config/                 # Settings & Environment
-├── handlers/               # Command & Message Handlers
-├── services/               # Core Logic (TMDB, Ollama, ImageGen)
-└── utils/                  # Helper functions
-```
-
-## Contact & Ideas
-
-Have a bot idea? Interested in custom automation?
-
-**Contact me on Telegram:** [@KrimsonByte](https://t.me/KrimsonByte)
+### 🛡️ 4. Estabilidad a Prueba de Fallos
+- **Reintentos Inteligentes**: Si TMDB falla, el bot reintenta varias veces antes de rendirse.
+- **Protección de Spam**: Detecta y rechaza nombres genéricos como "Video.mp4" a menos que tengan una descripción clara.
+- **Salud del Sistema**: Verifica que la IA esté activa antes de empezar.
 
 ---
-*Built with precision. No bloat.*
+
+## 📖 Instrucciones de Uso
+
+### Instalación
+1. Clona el repositorio.
+2. Crea tu archivo `.env` con las claves (ver `.env.example`).
+3. Instala `requirements.txt`.
+4. Instala **Ollama** y descárgate un modelo liviano (ej. `llama3` o `mistral`).
+
+### Cómo publicar una película
+1. **Envía el video** al bot en privado.
+2. (Opcional) Ponle un **caption** (descripción) si el nombre del archivo es muy malo.
+3. El bot hará todo el trabajo: busca, crea póster y publica en el canal.
+
+### Comandos Manuales
+- `/search [Nombre]` - Busca una película manualmente para ver sus datos.
+- **Corrección Manual**: Si el bot se equivoca y dice "No encontré nada", respóndele a ese mensaje con el nombre correcto (ej. *"Matrix 1999"*) y lo intentará de nuevo.
+
+---
+
+## 📂 Estructura del Proyecto
+
+- `cinegram/handlers/`: Lógica de respuestas (Videos, Comandos).
+- `cinegram/services/`: Cerebro del bot (TMDB, IA, Generador de Imágenes).
+- `cinegram/utils/`: Herramientas de ayuda.
+
+---
+
+*Creado con ❤️ para automatizar lo aburrido.*
