@@ -23,14 +23,18 @@ class AiService:
 
         # Robust prompt for extraction
         prompt = (
-            "Analyze the following text which contains a messy movie filename or spammy description. "
-            "Extract ONLY the REAL MOVIE TITLE and YEAR (if present). "
-            "STRICTLY REMOVE terms like: 'Online', 'Pelicula', 'Completa', 'Latino', 'Castellano', 'HD', '1080p', 'HomeCine', 'Cuevana', 'Estreno'. "
-            "If the text is 'Perdidos en el Artico Online Pelicula', the title is just 'Perdidos en el Artico'. "
-            "Correct common typos. "
-            "Return ONLY a JSON object with keys 'title' (string) and 'year' (string or null). "
-            "Do not output markdown code blocks, just the raw JSON string.\n\n"
-            f"Text: {text}"
+            "Analyze the messy text to extract the MOVIE TITLE and YEAR.\n"
+            "Rules:\n"
+            "1. Remove technical tags (1080p, HD, MP4).\n"
+            "2. Remove spam words (Online, Pelicula, Completa, HomeCine) ONLY if they are NOT part of the title.\n"
+            "3. BE CAREFUL with 'Latino': Keep it if it's the title (e.g. 'Un Amante Latino'), remove it if it's language (e.g. 'Batman Latino').\n\n"
+            "Examples:\n"
+            "- 'Batman.Latino.Online.mp4' -> {'title': 'Batman', 'year': null}\n"
+            "- 'Un Amante Latino (2022)' -> {'title': 'Un Amante Latino', 'year': '2022'}\n"
+            "- 'Mision.Completa.2000.avi' -> {'title': 'Mision Completa', 'year': '2000'}\n"
+            "- 'Spiderman.Pelicula.Completa' -> {'title': 'Spiderman', 'year': null}\n\n"
+            f"Input Text: {text}\n"
+            "JSON Output:"
         )
 
         payload = {
