@@ -36,29 +36,61 @@ class TmdbService:
             
             if not results:
                 # RETRY 2: Remove common noise suffixes
-                # "Hello Kitty La Pelicula" -> "Hello Kitty"
-                # "Sonic La Pelicula" -> "Sonic"
                 for noise in [" La Pelicula", " La Película", " The Movie", " El Film"]:
                     if noise.lower() in title.lower():
                         clean_title = title.lower().replace(noise.lower(), "").strip()
                         params["query"] = clean_title
-                        params["language"] = "es-MX" # Reset to Spanish
+                        params["language"] = "es-MX"
                         response = requests.get(url, params=params)
                         results = response.json().get('results', [])
                         if results: break
 
             if not results:
                 # RETRY 3: English Search (Original strategy)
-                params["query"] = title # Reset to full title (or should we use clean? try full english first)
+                params["query"] = title 
                 params["language"] = "en-US"
                 response = requests.get(url, params=params)
                 response.raise_for_status()
                 results = response.json().get('results', [])
 
             if results:
-                # Return the first (best) match
-                movie = results[0]
+                # --- FUZZY MATCH VALIDATION ---
+                from difflib import SequenceMatcher
                 
+                best_match = None
+                best_score = 0.0
+                
+                # Check the top 5 results
+                for movie in results[:5]:
+                    candidate_title = movie.get('title', '')
+                    candidate_orig = movie.get('original_title', '')
+                    
+                    # Compute similarity with both Spanish and Original titles
+                    score_local = SequenceMatcher(None, title.lower(), candidate_title.lower()).ratio()
+                    score_orig = SequenceMatcher(None, title.lower(), candidate_orig.lower()).ratio()
+                    max_score = max(score_local, score_orig)
+                    
+                    # Logic: If query has a year, enforce it strictly
+                    if year:
+                        re_date = movie.get('release_date', '')[:4]
+                        if re_date and re_date != str(year):
+                            # Penalize strict year mismatch
+                             max_score -= 0.3
+                    
+                    if max_score > best_score:
+                        best_score = max_score
+                        best_match = movie
+
+                # THRESHOLD: 0.6 (60% match required)
+                if best_match and best_score >= 0.6:
+                    movie = best_match
+                else:
+                    if best_match:
+                         logger.warning(f"Low confidence match for '{title}': '{best_match.get('title')}' (Score: {best_score:.2f})")
+                    else:
+                         logger.warning(f"No match found for '{title}'")
+                    return None
+
                 # If we fell back to English, translate the overview
                 overview = movie.get('overview')
                 if overview and params.get("language") == "en-US":

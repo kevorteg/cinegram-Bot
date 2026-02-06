@@ -22,6 +22,9 @@ def main():
     application.add_handler(PreCheckoutQueryHandler(auth_handler.precheckout_callback))
     application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, auth_handler.successful_payment_callback))
     
+    # Manual Correction (Reply to Bot)
+    application.add_handler(MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, video_handler.handle_manual_correction))
+
     # Password Handler (Explicitly check text)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auth_handler.handle_password), group=0)
 

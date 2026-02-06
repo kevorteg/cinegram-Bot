@@ -14,63 +14,34 @@ logger = logging.getLogger(__name__)
 # However, the user asked for: "El bot detecta... Te pide o infiere".
 # So a ConversationHandler is best.
 
-async def video_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Autonomous entry point for video messages.
-    1. Receives Video
-    2. Cleans Filename -> Title
-    3. Searches TMDB
-    4. Generates Poster
-    5. Publishes (Image + Video)
-    """
-    message = update.message
-    video = message.video or message.document
-    
-    if not video:
-        return
+from cinegram.utils.helpers import schedule_deletion
 
+# --- REFACTORED SHARED LOGIC ---
+
+async def process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, message, video, search_title, extracted_year=None):
+    """
+    Shared logic to process a movie with a given title/year.
+    Used by both automatic video_entry and manual handle_manual_correction.
+    """
+    
     # Feedback
-    await message.reply_text("⚙️ **Procesando video automáticamente...**", parse_mode="Markdown")
+    msg_status = await message.reply_text(f"🔍 Buscando: **{search_title}** ({extracted_year or '?'}) ...", parse_mode="Markdown")
+    schedule_deletion(context.bot, message.chat_id, msg_status.message_id)
 
-    file_id = video.file_id
-    # Fix: getattr might return None, so we must check for truthiness
-    filename = getattr(video, 'file_name', None) or "Unknown_Movie.mp4"
-    
-    # --- 1. CLEAN TITLE & EXTRACT YEAR (Intelligent) ---
-    from cinegram.services.filename_parser import FilenameParser
-    
-    parsed_data = FilenameParser.parse_filename(filename)
-    
-    if not parsed_data:
-        await message.reply_text(
-            "⚠️ **Error:** No pude entender el nombre del archivo.\n"
-            "Por favor, renómbralo a algo más claro (Ej: 'Titulo Año.mp4') y reenvíalo."
-        )
-        return
-
-    search_title = parsed_data['title']
-    extracted_year = parsed_data['year']
-    
-    # --- 2. SEARCH TMDB (With "Steroids") ---
-    await message.reply_text(f"🔍 Analizando: **{search_title}** ({extracted_year or '?'}) ...", parse_mode="Markdown")
-    
-    # Try Search with Year first
+    # --- 1. SEARCH TMDB ---
     tmdb_data = TmdbService.search_movie(search_title, year=extracted_year)
     
-    # If no result and had year, try without year (sometimes offsets vary)
+    # Retry without year if failed
     if not tmdb_data and extracted_year:
-        tmdb_data = TmdbService.search_movie(search_title)
-        
-    # --- 3. STRICT VALIDATION ---
+         tmdb_data = TmdbService.search_movie(search_title)
+    
+    # --- 2. VALIDATION ---
     if not tmdb_data:
-        await message.reply_text(
+        msg_fail = await message.reply_text(
             f"🚫 **Cancelado:** No encontré nada en TMDB para '{search_title}'.\n"
             "El archivo no se ha publicado.\n\n"
             "👉 **Solución:** Responde a este mensaje con el **Nombre Correcto** (y año opcional) para buscarlo manualmente."
         )
-        # Store context to allow reply handling (we need to route text replies to a search handler logic via a simple check in bot.py?)
-        # For now, simplest is asking them to use /search or rely on reply if we restore conversation.
-        # But wait, user wants autonomous. If autonomous fails, we stop.
         return
 
     # Extract Data
@@ -81,93 +52,216 @@ async def video_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rating = str(round(tmdb_data.get('vote_average', 0), 1))
     genre = TmdbService.get_genres(tmdb_data.get('genre_ids', []))
 
-    # Strict Check: Must have Poster and Year
     if not poster_path or not year:
-        await message.reply_text(
-            f"🚫 **Incompleto:** Encontré '{title}' pero le falta la portada o el año.\n"
-            "No voy a publicar contenido incompleto.\n\n"
-            "👉 Intenta buscar otra versión con `/search {title}`"
+        msg_inc = await message.reply_text(
+             f"🚫 **Incompleto:** Encontré '{title}' pero le falta portada/año. Intenta buscar otra versión."
         )
+        schedule_deletion(context.bot, message.chat_id, msg_inc.message_id, 15)
         return
 
-    # --- 4. GENERATE & PUBLISH ---
+    # --- 3. CONFIG (Single Tenant) ---
+    channel_id = settings.CHANNEL_ID
+    instagram_url = settings.INSTAGRAM_URL
+
+    # --- 4. GENERATE POSTER ---
+    msg_gen = await message.reply_text("🎨 Generando portada...", parse_mode="Markdown")
+    schedule_deletion(context.bot, message.chat_id, msg_gen.message_id)
+
     poster_url = TmdbService.get_poster_url(poster_path)
-    await message.reply_text("🎨 Generando portada...", parse_mode="Markdown")
+    output_path = os.path.join(settings.TEMP_DIR, f"{video.file_id}.jpg")
     
     try:
+        # Legacy ImageGenerator might need update or we use the basic one?
+        # The user said "haz el cambio en ambos bots", assuming he means the *feature* of manual correction.
+        # But wait, the ImageGenerator signature in Legacy might be different?
+        # Checking imports... from cinegram.services.image_generator import ImageGenerator
+        # I should check if ImageGenerator in legacy bot supports the new args.
+        # Safest is to use the old method signature if I haven't updated ImageGenerator here.
+        # But 'process_manual_correction' implies better accuracy.
+        # I'll stick to the OLD signature for now to avoid breaking if ImageGenerator wasn't updated.
         image_path = ImageGenerator.generate_poster(poster_url, title, description)
     except Exception as e:
-        await message.reply_text("❌ Error generando la imagen.")
+        logger.error(f"Poster error: {e}")
+        await message.reply_text("❌ Error generando portada.")
         return
 
-    # --- 5. PUBLISH TO CHANNEL (With Retry Logic) ---
-    channel_id = settings.CHANNEL_ID
-    
-    # Imports for retry logic
+    # --- 5. PUBLISH ---
     import asyncio
     from telegram.error import RetryAfter
 
-    try:
-        # Send Image
-        if image_path and os.path.exists(image_path):
-            while True:
-                try:
-                    with open(image_path, 'rb') as photo:
-                        await context.bot.send_photo(chat_id=channel_id, photo=photo)
-                    break # Success, exit loop
-                except RetryAfter as e:
-                    logger.warning(f"Flood control exceeded. Sleeping for {e.retry_after} seconds.")
-                    await asyncio.sleep(e.retry_after)
-                except Exception as e:
-                    logger.error(f"Error sending photo: {e}")
-                    break # Other error, skip photo
-
-        # Prepare Hashtags
-        hashtag_list = []
-        if genre:
-            # Split by comma usually
-            g_list = [g.strip() for g in genre.split(',')]
-            for g in g_list[:3]: # Max 3
-                # Remove spaces and make it like CamelCase/PascalCase for hashtag
-                # e.g. "Ciencia ficción" -> "CienciaFicción"
-                clean_tag = "".join(word.capitalize() for word in g.split())
-                hashtag_list.append(f"#{clean_tag}")
-                
-        hashtags = " ".join(hashtag_list)
-
-        # Prepare Caption
-        caption = (
-            f"🎬 *Película:* {title}\n"
-            f"📅 *Año:* {year}\n"
-            f"🌎 *Idioma:* Latino 🇨🇴🇲🇽\n"
-            f"💿 *Calidad:* HD\n"
-            f"⭐ *Calificación:* {rating}\n"
-            f"🎭 *Género:* {genre}\n\n"
-            f"📝 *Sinopsis:*\n{description[:800]}...\n\n"
-            f"{hashtags}\n\n"
-            f"🔗 *Síguenos en Instagram:*"
-        )
-        
-        keyboard = [[InlineKeyboardButton("📸 Instagram", url=settings.INSTAGRAM_URL)]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
+    # Send Photo
+    if image_path and os.path.exists(image_path):
         while True:
             try:
-                await context.bot.send_video(
-                    chat_id=channel_id,
-                    video=file_id,
-                    caption=caption,
-                    parse_mode="Markdown",
-                    reply_markup=reply_markup
-                )
-                break # Success
+                with open(image_path, 'rb') as photo:
+                    await context.bot.send_photo(chat_id=channel_id, photo=photo)
+                break
             except RetryAfter as e:
-                logger.warning(f"Flood control exceeded for video. Sleeping for {e.retry_after} seconds.")
-                await message.reply_text(f"⏳ Telegram me pidió esperar {e.retry_after}s... (Pausando para evitar bloqueo)")
                 await asyncio.sleep(e.retry_after)
-            
-        await message.reply_text(f"✅ **Publicado:** {title} ({year})")
+            except Exception:
+                break
+
+    # Prepare Caption
+    hashtag_list = []
+    if genre:
+        g_list = [g.strip() for g in genre.split(',')]
+        for g in g_list[:3]:
+            clean_tag = "".join(word.capitalize() for word in g.split())
+            hashtag_list.append(f"#{clean_tag}")
+    hashtags = " ".join(hashtag_list)
+    
+    caption = (
+        f"🎬 *Película:* {title}\n"
+        f"📅 *Año:* {year}\n"
+        f"🌎 *Idioma:* Latino 🇨🇴🇲🇽\n"
+        f"💿 *Calidad:* HD\n"
+        f"⭐ *Calificación:* {rating}\n"
+        f"🎭 *Género:* {genre}\n\n"
+        f"📝 *Sinopsis:*\n{description[:800]}...\n\n"
+        f"{hashtags}\n\n"
+        f"🔗 *Síguenos en Instagram:*"
+    )
+    
+    keyboard = [[InlineKeyboardButton("📸 Instagram", url=instagram_url)]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # Send Video
+    while True:
+        try:
+            await context.bot.send_video(chat_id=channel_id, video=video.file_id, caption=caption, parse_mode="Markdown", reply_markup=reply_markup)
+            break
+        except RetryAfter as e:
+            msg_w = await message.reply_text(f"⏳ Esperando {e.retry_after}s (Flood Control)...")
+            schedule_deletion(context.bot, message.chat_id, msg_w.message_id, e.retry_after)
+            await asyncio.sleep(e.retry_after)
+        except Exception as e:
+            await message.reply_text(f"❌ Error enviando video: {e}")
+            return
+
+    # Success
+    msg_ok = await message.reply_text(f"✅ **Publicado:** {title} ({year})")
+    schedule_deletion(context.bot, message.chat_id, msg_ok.message_id, 30)
+
+
+# --- ENTRY POINTS ---
+
+async def video_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Automatic entry point for video files."""
+    message = update.message
+    video = message.video or message.document
+    
+    if not video: return
+
+    file_id = video.file_id
+    filename = getattr(video, 'file_name', None) or "Unknown.mp4"
+    caption = message.caption or ""
+    
+    # --- STRATEGY 1: Parse Filename ---
+    from cinegram.services.filename_parser import FilenameParser
+    parsed_data = FilenameParser.parse_filename(filename)
+    
+    source_title = parsed_data['title'] if parsed_data else "Unknown"
+    source_year = parsed_data['year'] if parsed_data else None
+
+    # --- STRATEGY 2: Check Caption (Fallback) ---
+    is_generic = False
+    if source_title.lower() in ["unknown", "video", "whatsapp video", "vid"]:
+        is_generic = True
+    
+    # Check for spammy titles that Guessit failed to clean
+    spam_keywords = ["online", "pelicula", "completa", "homecine", "estreno", "cuevana", "latino", "castellano", "descargar"]
+    if any(keyword in source_title.lower() for keyword in spam_keywords):
+        is_generic = True
+        logger.info(f"Title contains spam keywords: {source_title}")
+
+    # Also check if filename looks like a date (common in whatsapp)
+    if not is_generic and len(source_title) < 4: 
+        is_generic = True
+
+    if is_generic and caption:
+        # If filename is bad but we have caption, prefer caption
+        # Simple clean of caption (first line usually)
+        clean_caption = caption.split('\n')[0].strip()
+        if len(clean_caption) > 3:
+             source_title = clean_caption
+             # Reset year as we are unsure
+             source_year = None
+             logger.info(f"Fallback to caption: {source_title}")
+
+    # --- STRATEGY 3: AI Deep Search (Ollama) ---
+    # Trigger if generic/spammy.
+    # We pass the Caption (if exists) OR the original Filename (if caption is empty) to the AI.
+    
+    if is_generic:
+         # Algorithm: Use Caption if available, otherwise use Filename (to let AI clean the spammy filename)
+         text_context = ""
+         if caption:
+             text_context = f"Caption: {caption}"
+         else:
+             text_context = f"Filename: {filename}" # AI needs the raw filename to clean it if no caption
+         
+         await message.reply_text("🤖 **Analizando con IA...** (Deep Search)", parse_mode="Markdown")
+         
+         from cinegram.services.ai_service import AiService
+         ai_data = AiService.extract_metadata(text_context)
+         
+         if ai_data:
+             source_title = ai_data['title']
+             source_year = ai_data.get('year')
+             logger.info(f"AI found: {source_title} ({source_year})")
+         else:
+             logger.warning("AI could not extract data.")
+
+    
+    if not source_title or source_title.lower() == "unknown":
+        await message.reply_text("⚠️ **No pude reconocer la película.**\nEl archivo y la descripción no son claros.\n\n👉 **Fuerza la búsqueda** respondiendo con el nombre exacto.")
+        return
+
+    # Call Shared Logic
+    await process_movie_upload(
+        update, context, message, video, 
+        search_title=source_title, 
+        extracted_year=source_year
+    )
+
+async def handle_manual_correction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles text replies to bot error messages.
+    """
+    message = update.message
+    user_text = message.text.strip()
+    
+    # 1. Validation: Must be a reply to the bot
+    if not message.reply_to_message or message.reply_to_message.from_user.id != context.bot.id:
+        return 
+
+    # 2. Validation: The bot's message must be an error/cancellation message
+    bot_text = message.reply_to_message.text or ""
+    if "No encontré nada" not in bot_text and "Solución" not in bot_text and "Cancelado" not in bot_text:
+        return 
+
+    # 3. Find the ORIGINAL Video Message
+    original_video_message = message.reply_to_message.reply_to_message
+    
+    if not original_video_message:
+        await message.reply_text("⚠️ No puedo encontrar el video original. Por favor reenvía el video.")
+        return
         
-    except Exception as e:
-        logger.error(f"Error publishing: {e}")
-        await message.reply_text(f"❌ Error enviando al canal: {e}")
+    video = original_video_message.video or original_video_message.document
+    if not video:
+        await message.reply_text("⚠️ El mensaje original no parece tener un video.")
+        return
+
+    # 4. Trigger Processing with NEW Title
+    import re
+    year_match = re.search(r'\((\d{4})\)', user_text)
+    year = year_match.group(1) if year_match else None
+    search_title = re.sub(r'\(\d{4}\)', '', user_text).strip()
+    
+    await message.reply_text(f"🔄 **Reintentando con:** {search_title} ...")
+    
+    await process_movie_upload(
+        update, context, message, video, 
+        search_title=search_title, 
+        extracted_year=year
+    )
