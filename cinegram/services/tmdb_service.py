@@ -126,12 +126,14 @@ class TmdbService:
                     overview = TranslationService.translate_to_spanish(overview)
 
                 return {
+                    "id": movie.get('id'),
                     "title": movie.get('title'),
-                    "overview": overview,
+                    "overview": movie.get('overview'),
                     "release_date": movie.get('release_date'),
                     "poster_path": movie.get('poster_path'),
                     "genre_ids": movie.get('genre_ids'),
-                    "vote_average": movie.get('vote_average')
+                    "vote_average": movie.get('vote_average'),
+                    "source": "tmdb"
                 }
             return None
             

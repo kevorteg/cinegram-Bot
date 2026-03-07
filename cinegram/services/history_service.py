@@ -2,11 +2,12 @@ import json
 import os
 import logging
 from typing import Set
+from cinegram.config import settings
 
 logger = logging.getLogger(__name__)
 
 class HistoryService:
-    HISTORY_FILE = "upload_history.json"
+    HISTORY_FILE = os.path.join(settings.ASSETS_DIR, "upload_history.json")
     _history: Set[str] = set()
 
     @classmethod
