@@ -1,39 +1,54 @@
-import json
-import os
 import logging
-from typing import Set
-from cinegram.config import settings
+from cinegram.services.db_service import DbService
 
 logger = logging.getLogger(__name__)
 
 class HistoryService:
-    HISTORY_FILE = os.path.join(settings.ASSETS_DIR, "upload_history.json")
-    _history: Set[str] = set()
-
-    @classmethod
-    def load_history(cls):
-        if not os.path.exists(cls.HISTORY_FILE):
-            return
-        try:
-            with open(cls.HISTORY_FILE, 'r') as f:
-                data = json.load(f)
-                cls._history = set(str(id) for id in data)
-            logger.info(f"Loaded {len(cls._history)} movies from history.")
-        except Exception as e:
-            logger.error(f"Failed to load history: {e}")
-
-    @classmethod
-    def save_movie(cls, tmdb_id: int):
+    @staticmethod
+    def save_movie(tmdb_id: str, title: str = "Unknown"):
         if not tmdb_id: return
-        cls._history.add(str(tmdb_id))
-        try:
-            with open(cls.HISTORY_FILE, 'w') as f:
-                json.dump(list(cls._history), f)
-        except Exception as e:
-            logger.error(f"Failed to save history: {e}")
+        conn = DbService.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR IGNORE INTO history (tmdb_id, title) VALUES (?, ?)",
+            (str(tmdb_id), title)
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"Movie {tmdb_id} saved to database history.")
 
-    @classmethod
-    def is_duplicate(cls, tmdb_id: int) -> bool:
-        if not cls._history:
-            cls.load_history()
-        return str(tmdb_id) in cls._history
+    @staticmethod
+    def is_duplicate(tmdb_id: str) -> bool:
+        if not tmdb_id: return False
+        conn = DbService.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM history WHERE tmdb_id = ?", (str(tmdb_id),))
+        result = cursor.fetchone()
+        conn.close()
+        return result is not None
+
+    @staticmethod
+    def get_stats():
+        """Returns total movies and total authorized users."""
+        conn = DbService.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM history")
+        total_movies = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM users")
+        total_users = cursor.fetchone()[0]
+        conn.close()
+        return total_movies, total_users
+
+    @staticmethod
+    def get_today_list():
+        """Returns list of movies published in the last 24 hours."""
+        conn = DbService.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT title FROM history 
+            WHERE published_at >= datetime('now', '-1 day')
+            ORDER BY published_at DESC
+        """)
+        movies = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return movies

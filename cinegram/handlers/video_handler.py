@@ -377,7 +377,7 @@ async def process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TYP
             if thumb_file: thumb_file.close()
 
             # Save to History
-            HistoryService.save_movie(tmdb_id)
+            HistoryService.save_movie(tmdb_id, title)
 
             # Quick per-movie acknowledgment (auto-deletes)
             msg_ok = await message.reply_text(

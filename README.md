@@ -29,10 +29,10 @@ Keeps your chat and channel clean.
 - **Auto-Deletion**: Automatically deletes your uploaded video file from the private chat after successful publishing.
 - **Ephemeral Messages**: Status updates ("Searching...", "Generating poster...") self-destruct to avoid clutter.
 
-### 🛡️ 4. Bulletproof Stability
-- **Smart Retries**: If TMDB fails, the bot retries multiple times with backoff.
-- **Spam Protection**: Rejects generic names like "Video.mp4" unless a clear description is provided.
-- **Health Check**: Verifies AI availability at startup.
+### � 5. Persistence & Stats (SQLite)
+- **Memory**: The bot now uses a **SQLite database** (`cinegram.db`) to remember every movie published. No more duplicates!
+- **Admin Stats**: Track your channel growth with real-time reports.
+- **Auto-Migration**: Automatically imports your legacy JSON history on first run.
 
 ---
 
@@ -42,6 +42,7 @@ Keeps your chat and channel clean.
 1. Clone the repository.
 2. Create `.env` file (see `.env.example`).
 3. Install `requirements.txt`.
+    - *New dependency*: `telethon` for history scanning.
 4. Install **Ollama** and pull a lightweight model (e.g., `llama3` or `mistral`).
 
 ### How to Publish
@@ -49,17 +50,34 @@ Keeps your chat and channel clean.
 2. (Optional) Add a **caption** if the filename is garbage.
 3. The bot handles the rest: search, poster gen, and publishing.
 
-### Manual Commands
+### Admin Commands
+- `/stats` - View total movies published and authorized users.
+- `/today` - List all movies uploaded in the last 24 hours.
 - `/search [Name]` - Manually search for a movie.
 - **Manual Correction**: If the bot says "Not found", simply reply to that error message with the correct name (e.g., *"Matrix 1999"*) to retry.
 
 ---
 
-## 📂 Estructura del Proyecto
+## � History Scanner (Userbot)
 
-- `cinegram/handlers/`: Lógica de respuestas (Videos, Comandos).
-- `cinegram/services/`: Cerebro del bot (TMDB, IA, Generador de Imágenes).
-- `cinegram/utils/`: Herramientas de ayuda.
+If you have an existing channel with thousands of movies, you can sync them to the bot's database so it remembers them:
+
+1. Obtain `API_ID` and `API_HASH` from [my.telegram.org](https://my.telegram.org).
+2. Add them to your `.env` along with your `TELEGRAM_PHONE`.
+3. Run the scanner script:
+   ```bash
+   python scripts/scan_channel.py
+   ```
+4. Enter the code (and password if requested) sent to your Telegram.
+5. Watch as the bot populates its database with your entire history!
+
+---
+
+## 📂 Project Structure
+
+- `cinegram/handlers/`: Logics (Video processing, /stats, /search).
+- `cinegram/services/`: Core logic (TMDB, AI, DB, Poster Generator).
+- `scripts/`: Maintenance tools (History scanner, Migrations).
 
 ---
 

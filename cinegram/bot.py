@@ -6,8 +6,9 @@ from telegram.ext import (
     filters, CallbackQueryHandler, PreCheckoutQueryHandler
 )
 from cinegram.config import settings
-from cinegram.handlers import start, archive_handler, video_handler, external_handler, search_handler, auth_handler
+from cinegram.handlers import start, archive_handler, video_handler, external_handler, search_handler, auth_handler, stats_handler
 from cinegram.handlers import approval_handler
+from cinegram.services.db_service import DbService
 
 # Configure Logging
 logging.basicConfig(
@@ -62,10 +63,7 @@ async def clear_failed_command(update, context):
 
 
 def main():
-    if not settings.BOT_TOKEN:
-        print("Error: BOT_TOKEN not found in environment variables.")
-        return
-
+    DbService.init_db()
     application = ApplicationBuilder().token(settings.BOT_TOKEN).build()
 
     # --- Legacy stubs (payment system removed but handlers kept to avoid errors) ---
@@ -83,6 +81,8 @@ def main():
     application.add_handler(CommandHandler("search", auth_handler.auth_required(search_handler.search_command)))
     application.add_handler(CommandHandler("failed", failed_command))
     application.add_handler(CommandHandler("clearfailed", clear_failed_command))
+    application.add_handler(CommandHandler("stats", stats_handler.stats_command))
+    application.add_handler(CommandHandler("today", stats_handler.today_command))
 
     # --- Callback Queries ---
     application.add_handler(CallbackQueryHandler(search_handler.handle_search_callback, pattern="^TMDB_"))
