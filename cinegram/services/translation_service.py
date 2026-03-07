@@ -50,3 +50,37 @@ class TranslationService:
         except Exception as e:
             logger.error(f"Ollama translation failed: {e}")
             return text # Fallback to original
+    @staticmethod
+    def translate_to_english(text: str) -> str:
+        """
+        Translates a movie title or text to English using local Ollama model.
+        Used as a search fallback when TMDB fails with the original language title.
+        """
+        if not text:
+            return text
+
+        prompt = (
+            "Translate the following movie title to English. "
+            "Return ONLY the translated title. No explanations, no quotes, no punctuation at the end.\n"
+            f"Title: {text}"
+        )
+
+        payload = {
+            "model": TranslationService.MODEL,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": 0.1}
+        }
+
+        try:
+            logger.info(f"Translating to English via Ollama: '{text}'")
+            response = requests.post(TranslationService.OLLAMA_URL, json=payload, timeout=20)
+            response.raise_for_status()
+            translated = response.json().get('response', '').strip().strip('"').strip("'")
+            if translated and translated.lower() != text.lower():
+                logger.info(f"English translation: '{text}' -> '{translated}'")
+                return translated
+            return text
+        except Exception as e:
+            logger.error(f"Ollama English translation failed: {e}")
+            return text

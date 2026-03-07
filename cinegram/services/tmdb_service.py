@@ -10,6 +10,13 @@ class TmdbService:
     IMAGE_BASE_URL = "https://image.tmdb.org/t/p/original"
 
     @staticmethod
+    def _normalize(text: str) -> str:
+        """Removes accents and lowercases text for fuzzy comparison."""
+        import unicodedata
+        if not text: return ""
+        return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn').lower().strip()
+
+    @staticmethod
     def search_movie(title: str, year: str = None) -> Optional[Dict]:
         """
         Searches for a movie on TMDB by title and optional year.
@@ -26,9 +33,6 @@ class TmdbService:
             "language": "es-MX", # Latin Spanish preference
             "page": 1
         }
-        if year:
-            params["year"] = year
-
         if year:
             params["year"] = year
 
@@ -68,14 +72,19 @@ class TmdbService:
                 best_match = None
                 best_score = 0.0
                 
+                query_norm = TmdbService._normalize(title)
+
                 # Check the top 5 results
                 for movie in results[:5]:
                     candidate_title = movie.get('title', '')
                     candidate_orig = movie.get('original_title', '')
                     
-                    # Compute similarity with both Spanish and Original titles
-                    score_local = SequenceMatcher(None, title.lower(), candidate_title.lower()).ratio()
-                    score_orig = SequenceMatcher(None, title.lower(), candidate_orig.lower()).ratio()
+                    cand_norm_local = TmdbService._normalize(candidate_title)
+                    cand_norm_orig = TmdbService._normalize(candidate_orig)
+                    
+                    # Compute similarity
+                    score_local = SequenceMatcher(None, query_norm, cand_norm_local).ratio()
+                    score_orig = SequenceMatcher(None, query_norm, cand_norm_orig).ratio()
                     max_score = max(score_local, score_orig)
                     
                     # Logic: If query has a year, enforce it strictly
@@ -83,18 +92,29 @@ class TmdbService:
                         re_date = movie.get('release_date', '')[:4]
                         if re_date and re_date != str(year):
                             # Penalize strict year mismatch
-                             max_score -= 0.3
+                             max_score -= 0.5 # Heavy penalty
                     
+                    logger.info(f"Candidate: '{candidate_title}' (Score: {max_score:.2f}) vs Input: '{title}'")
+
+                    # SUBSTRING RESCUE:
+                    # If the user's query is a clear substring of the movie title (or vice versa),
+                    # boost the score or force acceptance.
+                    # Example: Query "Dios no esta muerto 3" matching "Dios no está muerto 3: una luz..."
+                    if query_norm in cand_norm_local or query_norm in cand_norm_orig:
+                         if len(query_norm) > 5: # Avoid short generic substrings like "the"
+                             logger.info(f"Substring Match Detected! Boosting score for '{candidate_title}'")
+                             max_score = max(max_score, 0.9) # Boost to 0.9 (passing)
+
                     if max_score > best_score:
                         best_score = max_score
                         best_match = movie
 
-                # THRESHOLD: 0.6 (60% match required)
-                if best_match and best_score >= 0.6:
+                # THRESHOLD: 0.8 (80% match required)
+                if best_match and best_score >= 0.8:
                     movie = best_match
                 else:
                     if best_match:
-                         logger.warning(f"Low confidence match for '{title}': '{best_match.get('title')}' (Score: {best_score:.2f})")
+                         logger.warning(f"Rejected best match '{best_match.get('title')}' due to low score ({best_score:.2f} < 0.8)")
                     else:
                          logger.warning(f"No match found for '{title}'")
                     return None
@@ -115,8 +135,8 @@ class TmdbService:
                 }
             return None
             
-        except requests.RequestException as e:
-            logger.error(f"TMDB Search failed: {e}")
+        except Exception as e:
+            logger.error(f"TMDB Search failed (CRITICAL): {e}", exc_info=True)
             return None
 
     @staticmethod

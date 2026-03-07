@@ -22,7 +22,7 @@ async def send_publication(update: Update, context: ContextTypes.DEFAULT_TYPE, m
         f"📅 *Año:* {metadata['year']}\n"
         f"🌎 *Idioma:* Latino 🇨🇴🇲🇽\n"
         f"💿 *Calidad:* HD\n"
-        f"⭐ *Calificación:* {metadata.get('rating', 'N/A')}\n"
+        f"⭐️ *Calificación:* {metadata.get('rating', 'N/A')}\n"
         f"🎭 *Género:* {metadata['genre']}\n\n"
         f"📝 *Sinopsis:*\n{metadata.get('description', '')[:800]}...\n\n"
         f"🔗 *Síguenos en Instagram:*"

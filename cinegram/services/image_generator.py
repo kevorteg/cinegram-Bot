@@ -107,27 +107,42 @@ class ImageGenerator:
 
         # Text Positioning
         margin_x = 100
-        margin_y = 100
-        max_width_chars = 50 # approx for wrapping
+        bottom_margin = 60  # Minimum gap from the bottom edge
+        title_line_h = 90
+        desc_line_h = 50
+
+        # Wrap title and description text
+        title_lines = textwrap.wrap(title, width=25)
+        clean_desc = (description[:400] + '...') if len(description) > 400 else description
+        desc_lines = textwrap.wrap(clean_desc, width=70)
+
+        # Calculate total height needed for title block
+        title_block_h = len(title_lines) * title_line_h
+
+        # Available space for description (below title, above bottom margin)
+        # We give the title block approx 40% from bottom
+        title_start_y = target_size[1] - bottom_margin - title_block_h - 20 - (len(desc_lines) * desc_line_h)
+
+        # Clamp so title never starts too high or below the safe zone
+        min_title_y = int(target_size[1] * 0.45)
+        title_start_y = max(title_start_y, min_title_y)
+
+        # Limit desc lines to those that actually fit
+        available_desc_h = target_size[1] - bottom_margin - title_start_y - title_block_h - 20
+        max_desc_lines = max(1, available_desc_h // desc_line_h)
+        desc_lines = desc_lines[:max_desc_lines]
 
         # Draw Title
-        # split title if too long?
-        title_lines = textwrap.wrap(title, width=25)
-        current_y = target_size[1] - 350 # Start from bottom-ish area
+        current_y = title_start_y
         for line in title_lines:
-             # Calculate text width to verify fit if needed, but simple draw is often enough
-             draw.text((margin_x, current_y), line, font=title_font, fill="white")
-             current_y += 90 # Line height
+            draw.text((margin_x, current_y), line, font=title_font, fill="white")
+            current_y += title_line_h
 
         # Draw Description (Synopsis)
         current_y += 20
-        # Limit description lines
-        clean_desc = (description[:300] + '...') if len(description) > 300 else description
-        desc_lines = textwrap.wrap(clean_desc, width=70)[:6] # Max 6 lines
-
         for line in desc_lines:
             draw.text((margin_x, current_y), line, font=desc_font, fill=(200, 200, 200))
-            current_y += 50
+            current_y += desc_line_h
 
         # Draw Logo Watermark (Top Right)
         try:

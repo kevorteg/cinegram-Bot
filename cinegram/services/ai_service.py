@@ -80,3 +80,38 @@ class AiService:
         except Exception as e:
             logger.error(f"AI Metadata extraction failed: {e}")
             return None
+
+    @staticmethod
+    def analyze_faith_content(title: str, overview: str) -> Optional[Dict]:
+        """
+        Analyzes if a movie is Christian/Faith-based and provides a Bible verse.
+        """
+        prompt = (
+            f"Analyze if the movie '{title}' (Overview: {overview}) is explicitly Christian or Faith-based.\n"
+            "If YES:\n"
+            "  1. Select a relevant Bible Verse (Reina Valera 1960) that matches the movie's theme.\n"
+            "  2. If no specific theme fits, use a generic Salvation verse (e.g. John 3:16, Romans 10:9).\n"
+            "If NO: Return is_faith=False.\n\n"
+            "Return JSON: { 'is_faith': bool, 'verse': 'citation and text', 'hashtags': ['#Jesuseselcamino', '#Diosteama', '#motivando'] }"
+        )
+
+        payload = {
+            "model": AiService.MODEL,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+            "options": {
+                "temperature": 0.2
+            }
+        }
+
+        try:
+            response = requests.post(AiService.OLLAMA_URL, json=payload, timeout=90)
+            response.raise_for_status()
+            data = response.json()
+            answer = data.get('response', '{}')
+            parsed = json.loads(answer)
+            return parsed
+        except Exception as e:
+            logger.error(f"Faith Analysis failed: {e}")
+            return {'is_faith': False}
