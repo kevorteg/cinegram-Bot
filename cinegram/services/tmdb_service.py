@@ -97,17 +97,14 @@ class TmdbService:
                     logger.info(f"Candidate: '{candidate_title}' (Score: {max_score:.2f}) vs Input: '{title}'")
 
                     # SUBSTRING RESCUE:
-                    # If the user's query is a clear substring of the movie title (or vice versa),
-                    # boost the score or force acceptance.
-                    # Example: Query "Dios no esta muerto 3" matching "Dios no está muerto 3: una luz..."
                     if query_norm in cand_norm_local or query_norm in cand_norm_orig:
-                         if len(query_norm) > 5: # Avoid short generic substrings like "the"
+                         if len(query_norm) > 5:
                              logger.info(f"Substring Match Detected! Boosting score for '{candidate_title}'")
-                             max_score = max(max_score, 0.9) # Boost to 0.9 (passing)
+                             max_score = max(max_score, 0.9)
 
                     if max_score > best_score:
-                        best_score = max_score
-                        best_match = movie
+                         best_score = max_score
+                         best_match = movie
 
                 # THRESHOLD: 0.8 (80% match required)
                 if best_match and best_score >= 0.8:
@@ -118,12 +115,6 @@ class TmdbService:
                     else:
                          logger.warning(f"No match found for '{title}'")
                     return None
-
-                # If we fell back to English, translate the overview
-                overview = movie.get('overview')
-                if overview and params.get("language") == "en-US":
-                    from cinegram.services.translation_service import TranslationService
-                    overview = TranslationService.translate_to_spanish(overview)
 
                 return {
                     "id": movie.get('id'),
@@ -150,7 +141,6 @@ class TmdbService:
     @staticmethod
     def get_genres(genre_ids: list) -> str:
         """Converts genre IDs to string string based on cached list (simplified)."""
-        # Simplified mapping for common genres
         genres = {
             28: "Acción", 12: "Aventura", 16: "Animación", 35: "Comedia",
             80: "Crimen", 99: "Documental", 18: "Drama", 10751: "Familia",
@@ -158,4 +148,36 @@ class TmdbService:
             9648: "Misterio", 10749: "Romance", 878: "Ciencia Ficción",
             10770: "Película de TV", 53: "Suspense", 10752: "Bélica", 37: "Western"
         }
-        return ", ".join([genres.get(gid, "Cine") for gid in genre_ids[:2]])
+        return ", ".join([genres.get(gid, "Cine") for gid in genre_ids[:3]])
+
+    @staticmethod
+    def get_trailer(movie_id: int) -> Optional[str]:
+        """Fetches the YouTube trailer URL for a movie ID."""
+        if not settings.TMDB_API_KEY:
+            return None
+            
+        url = f"{TmdbService.BASE_URL}/movie/{movie_id}/videos"
+        params = {"api_key": settings.TMDB_API_KEY, "language": "es-MX"}
+        
+        try:
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            videos = response.json().get('results', [])
+            
+            # 1. Look for trailer in Spanish
+            for v in videos:
+                if v.get('site') == 'YouTube' and v.get('type') == 'Trailer':
+                    return f"https://www.youtube.com/watch?v={v['key']}"
+            
+            # 2. Fallback to English trailers
+            params["language"] = "en-US"
+            response = requests.get(url, params=params, timeout=10)
+            videos = response.json().get('results', [])
+            for v in videos:
+                if v.get('site') == 'YouTube' and v.get('type') == 'Trailer':
+                    return f"https://www.youtube.com/watch?v={v['key']}"
+                    
+            return None
+        except Exception as e:
+            logger.error(f"Trailer fetch failed: {e}")
+            return None

@@ -76,6 +76,8 @@ def main():
     # Manual Correction (Reply to Bot): group=1
     application.add_handler(MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, video_handler.handle_manual_correction), group=1)
 
+
+
     # --- Admin Commands ---
     application.add_handler(CommandHandler("start", start.start_command))
     application.add_handler(CommandHandler("search", auth_handler.auth_required(search_handler.search_command)))
@@ -87,6 +89,7 @@ def main():
     # --- Callback Queries ---
     application.add_handler(CallbackQueryHandler(search_handler.handle_search_callback, pattern="^TMDB_"))
     application.add_handler(CallbackQueryHandler(approval_handler.handle_approval_callback, pattern="^(APPROVE|REJECT)_"))
+
 
     # --- Video: Admin publishes directly, others go to approval queue ---
     application.add_handler(MessageHandler(

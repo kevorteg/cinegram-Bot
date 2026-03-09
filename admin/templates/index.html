@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CineGram Admin Panel</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body>
+    <aside>
+        <div class="logo"><i data-lucide="clapperboard"></i> Cine<span>Gram</span></div>
+        <nav>
+            <ul id="sidebarMenu">
+                <li class="active" onclick="switchView('dashboard')"><i data-lucide="layout-dashboard"></i> Library</li>
+                <li onclick="switchView('stats')"><i data-lucide="bar-chart-3"></i> Statistics</li>
+                <li onclick="switchView('settings')"><i data-lucide="settings"></i> Control</li>
+            </ul>
+        </nav>
+        <div style="margin-top: auto; color: var(--text-dim); font-size: 0.8rem; text-align: center; opacity: 0.5;">
+            Premium Control Engine v3.0
+        </div>
+    </aside>
+
+    <main>
+        <div id="view-dashboard" class="view-content active">
+            <header>
+                <div class="search-container">
+                    <i data-lucide="search"></i>
+                    <input type="text" id="searchInput" placeholder="Search by movie title, ID or metadata..."
+                        onkeyup="debounceSearch()">
+                    <i data-lucide="mic" style="opacity: 0.3; cursor: not-allowed;"></i>
+                </div>
+            </header>
+            <div id="movieGrid" class="grid"></div>
+        </div>
+
+        <div id="view-stats" class="view-content" style="display:none">
+            <header>
+                <h1>Bot Performance</h1>
+            </header>
+            <div id="statsContent" class="stats-grid"></div>
+        </div>
+
+        <div id="view-settings" class="view-content" style="display:none">
+            <header>
+                <h1>System Control</h1>
+            </header>
+            <div
+                style="background: var(--card-bg); padding: 3rem; border-radius: 32px; border: 1px solid var(--border); margin-top: 1rem;">
+                <p style="color: var(--text-dim)">Environment: <span style="color: var(--accent)">Production</span></p>
+                <p style="color: var(--text-dim); margin-top: 1rem;">Database: <span
+                        style="color: var(--accent)">Connected</span></p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Professional Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <h2 style="margin-bottom: 2rem; font-weight: 800;">Edit Entry</h2>
+            <input type="hidden" id="editTmdbId">
+            <div style="margin-bottom: 2.5rem;">
+                <label
+                    style="color: var(--text-dim); display: block; margin-bottom: 0.75rem; font-size: 0.85rem; font-weight: 600;">Movie
+                    Title</label>
+                <input type="text" id="editTitle"
+                    style="width: 100%; background: #0b0c16; border: 1px solid var(--border); padding: 1.25rem; border-radius: 16px; color: white; font-size: 1.1rem;">
+            </div>
+            <div class="card-actions">
+                <button class="action-btn"
+                    style="width: auto; padding: 0 1.5rem; background: transparent; color: white;"
+                    onclick="closeModal()">Cancel</button>
+                <button class="action-btn btn-edit"
+                    style="width: auto; padding: 0 2.5rem; height: 50px; border-radius: 14px; font-weight: 700; background: var(--accent); color: var(--bg-color);"
+                    onclick="saveEdit()">Update Metadata</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allMovies = [];
+        let searchTimeout;
+
+        function switchView(view) {
+            document.querySelectorAll('.view-content').forEach(v => v.style.display = 'none');
+            document.querySelectorAll('aside li').forEach(l => l.classList.remove('active'));
+            document.getElementById(`view-${view}`).style.display = 'block';
+            event.currentTarget.classList.add('active');
+            if (view === 'stats') loadStats();
+        }
+
+        async function loadMovies(q = '') {
+            const grid = document.getElementById('movieGrid');
+            grid.innerHTML = '<div class="empty-state">Synthesizing library...</div>';
+            try {
+                const res = await fetch(q ? `/api/movies?q=${q}` : '/api/movies');
+                allMovies = await res.json();
+                renderMovies(allMovies);
+            } catch (err) { grid.innerHTML = '<div class="empty-state">Critical Sync Error</div>'; }
+        }
+
+        function renderMovies(data) {
+            const grid = document.getElementById('movieGrid');
+            if (!data.length) { grid.innerHTML = '<div class="empty-state">No matches found in your vault.</div>'; return; }
+            grid.innerHTML = data.map(m => `
+                <div class="movie-card">
+                    <div class="poster-box"><img src="https://placehold.co/300x450/11121d/38bdf8?text=Syncing..." data-id="${m.tmdb_id}" class="lazy-poster"></div>
+                    <div class="card-info">
+                        <div class="movie-title">${m.title}</div>
+                        <div class="movie-meta">TMDB · ${m.tmdb_id}</div>
+                        <div class="card-actions">
+                            <button class="action-btn btn-edit" onclick="openEdit('${m.tmdb_id}', '${m.title.replace(/'/g, "\\'")}')"><i data-lucide="edit-3"></i></button>
+                            <button class="action-btn btn-delete" onclick="deleteMovie('${m.tmdb_id}')"><i data-lucide="trash-2"></i></button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+            startLazyLoad();
+        }
+
+        function startLazyLoad() {
+            const obs = new IntersectionObserver(entries => {
+                entries.forEach(e => {
+                    if (e.isIntersecting) {
+                        const img = e.target;
+                        fetch(`/api/poster/${img.dataset.id}`).then(r => r.json()).then(d => img.src = d.url);
+                        obs.unobserve(img);
+                    }
+                });
+            }, { rootMargin: '100px' });
+            document.querySelectorAll('.lazy-poster').forEach(i => obs.observe(i));
+        }
+
+        function debounceSearch() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => loadMovies(document.getElementById('searchInput').value), 500);
+        }
+
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                document.getElementById('statsContent').innerHTML = `
+                    <div class="stat-card"><h2>${data.total_movies}</h2><p>Library Size</p></div>
+                    <div class="stat-card"><h2>${data.total_users}</h2><p>Auth Users</p></div>
+                    <div class="stat-card"><h2>${data.today_uploads}</h2><p>Daily Push</p></div>
+                    <div class="stat-card"><h2 style="color:#4ade80">Online</h2><p>Engine Status</p></div>
+                `;
+            } catch (err) { }
+        }
+
+        function openEdit(id, title) {
+            document.getElementById('editTmdbId').value = id;
+            document.getElementById('editTitle').value = title;
+            document.getElementById('editModal').style.display = 'flex';
+        }
+
+        function closeModal() { document.getElementById('editModal').style.display = 'none'; }
+
+        async function saveEdit() {
+            const id = document.getElementById('editTmdbId').value;
+            const title = document.getElementById('editTitle').value;
+            await fetch(`/api/movies/${id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title })
+            });
+            closeModal();
+            loadMovies();
+        }
+
+        async function deleteMovie(id) {
+            if (!confirm('Permanently remove this entry?')) return;
+            await fetch(`/api/movies/${id}`, { method: 'DELETE' });
+            loadMovies();
+        }
+
+        window.onload = () => { loadMovies(); lucide.createIcons(); };
+    </script>
+</body>
+
+</html>
