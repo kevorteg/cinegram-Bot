@@ -267,18 +267,22 @@ async def video_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Heurística: Si hay caption, úsalo primero porque suele ser más limpio en reenvíos
     if caption:
-        # Quitamos emojis y el año (XXXX) si vienen pegados para mejorar la búsqueda
-        clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', caption) # Quitar emojis
+        # Quitamos emojis
+        clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', caption)
         clean_text = clean_text.split('\n')[0].strip() # Solo primera línea
         
-        year_match = re.search(r'\(?(\d{4})\)?', clean_text)
+        # Extraer el año y eliminar caracteres alrededor del año (ej: " - 2024 ", "(2024)")
+        year_match = re.search(r'[-_\s\(\[|]*(\d{4})[-_\s\)\]|]*', clean_text)
         if year_match:
             source_year = year_match.group(1)
-            clean_text = clean_text.replace(year_match.group(0), "").strip()
+            clean_text = clean_text.replace(year_match.group(0), " ").strip()
+            
+        # Remover cualquier guión o separador que haya quedado al final
+        clean_text = re.sub(r'[-_|\(\)\[\]]+\s*$', '', clean_text).strip()
         
-        search_title = clean_text
-        logger.info(f"Using caption for search: {search_title} ({source_year})")
-
+        if clean_text:
+            search_title = clean_text
+        logger.info(f"Using caption for search: '{search_title}' ({source_year})")
     # 2. Si el caption falló o es muy corto, prueba con el nombre del archivo
     if len(search_title) < 3 and filename:
         from cinegram.services.filename_parser import FilenameParser
@@ -301,9 +305,15 @@ async def handle_manual_correction(update: Update, context: ContextTypes.DEFAULT
     if not video: return
 
     # Extraer año si viene en formato (2024)
-    year_match = re.search(r'\(?(\d{4})\)?', user_text)
+    year_match = re.search(r'[-_\s\(\[|]*(\d{4})[-_\s\)\]|]*', user_text)
     year = year_match.group(1) if year_match else None
-    title = re.sub(r'\(?\d{4}\)?', '', user_text).strip()
+    
+    if year_match:
+        title = user_text.replace(year_match.group(0), " ").strip()
+    else:
+        title = user_text
+        
+    title = re.sub(r'[-_|\(\)\[\]]+\s*$', '', title).strip()
 
     async with get_semaphore():
         await process_movie_upload(update, context, update.message, video, title, year)
