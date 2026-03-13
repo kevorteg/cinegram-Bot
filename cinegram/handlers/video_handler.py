@@ -45,9 +45,10 @@ async def _send_batch_summary(chat_id: int, bot):
         f"Se subieron *{len(movies)} pel\u00edcula(s)* nuevas:\n\n"
         f"{movie_list}\n\n"
         f"\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\n"
-        f"*\u00bfQuieres pedir una pel\u00edcula?*\n"
+        f"*\u00bfQuieres pedir una pel\u00edcula o serie?*\n"
         f"Escr\u00edbenos por los *mensajes directos del canal*.\n"
-        f"\U0001f4ab *Costo: 5 Estrellas de Telegram.*\n"
+        f"\U0001f4ab *Costo: 10 Estrellas de Telegram.*\n"
+        f"_Subi\u00f3 (de 5 a 10) ya que las series llevan m\u00e1s tiempo._\n"
         f"_Nos ayuda a seguir subiendo contenido. \u00a1Gracias!_ \U0001f64f\n\n"
         f"\U0001f3a5 #cinegram"
     )
