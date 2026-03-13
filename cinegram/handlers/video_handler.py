@@ -110,21 +110,33 @@ async def process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TYP
                     parts.extend(halves)
             return list(dict.fromkeys(parts))
 
+        def is_year_valid(data, exp_yr):
+            if not exp_yr or not data: return True
+            yr = data.get('release_date', '')[:4]
+            if not yr: return True
+            try: return abs(int(yr) - int(exp_yr)) <= 1
+            except ValueError: return True
+
         tmdb_data = await asyncio.to_thread(TmdbService.search_movie, search_title, year=extracted_year)
         if not tmdb_data and extracted_year:
-            tmdb_data = await asyncio.to_thread(TmdbService.search_movie, search_title)
+            fb = await asyncio.to_thread(TmdbService.search_movie, search_title)
+            if is_year_valid(fb, extracted_year): tmdb_data = fb
 
         if not tmdb_data:
             for candidate in split_titles(search_title)[1:]:
                 tmdb_data = await asyncio.to_thread(TmdbService.search_movie, candidate, year=extracted_year)
-                if not tmdb_data: tmdb_data = await asyncio.to_thread(TmdbService.search_movie, candidate)
+                if not tmdb_data: 
+                    fb = await asyncio.to_thread(TmdbService.search_movie, candidate)
+                    if is_year_valid(fb, extracted_year): tmdb_data = fb
                 if tmdb_data: break
 
         if not tmdb_data:
             en_title = await asyncio.to_thread(TranslationService.translate_to_english, search_title)
             if en_title and en_title.lower() != search_title.lower():
                 tmdb_data = await asyncio.to_thread(TmdbService.search_movie, en_title, year=extracted_year)
-                if not tmdb_data: tmdb_data = await asyncio.to_thread(TmdbService.search_movie, en_title)
+                if not tmdb_data:
+                    fb = await asyncio.to_thread(TmdbService.search_movie, en_title)
+                    if is_year_valid(fb, extracted_year): tmdb_data = fb
 
         if not tmdb_data:
             tmdb_data = await asyncio.to_thread(OmdbService.search_movie, search_title, year=extracted_year)
