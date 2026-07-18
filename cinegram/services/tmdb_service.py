@@ -53,7 +53,7 @@ class TmdbService:
                         clean_title = title.lower().replace(noise.lower(), "").strip()
                         params["query"] = clean_title
                         params["language"] = "es-MX"
-                        response = requests.get(url, params=params)
+                        response = session.get(url, params=params, timeout=10)
                         results = response.json().get('results', [])
                         if results: break
 
@@ -61,7 +61,7 @@ class TmdbService:
                 # RETRY 3: English Search (Original strategy)
                 params["query"] = title 
                 params["language"] = "en-US"
-                response = requests.get(url, params=params)
+                response = session.get(url, params=params, timeout=10)
                 response.raise_for_status()
                 results = response.json().get('results', [])
 
@@ -106,12 +106,12 @@ class TmdbService:
                          best_score = max_score
                          best_match = movie
 
-                # THRESHOLD: 0.8 (80% match required)
-                if best_match and best_score >= 0.8:
+                # THRESHOLD: 0.7 (70% match required — more lenient for messy titles)
+                if best_match and best_score >= 0.7:
                     movie = best_match
                 else:
                     if best_match:
-                         logger.warning(f"Rejected best match '{best_match.get('title')}' due to low score ({best_score:.2f} < 0.8)")
+                         logger.warning(f"Rejected best match '{best_match.get('title')}' due to low score ({best_score:.2f} < 0.7)")
                     else:
                          logger.warning(f"No match found for '{title}'")
                     return None
@@ -149,6 +149,78 @@ class TmdbService:
             10770: "Película de TV", 53: "Suspense", 10752: "Bélica", 37: "Western"
         }
         return ", ".join([genres.get(gid, "Cine") for gid in genre_ids[:3]])
+
+    @staticmethod
+    def get_movie_details(movie_id: int) -> Dict:
+        """
+        Fetches extended movie details: runtime, countries, production companies,
+        director, screenplay writer, and top cast members.
+        Returns a dict with all available fields.
+        """
+        if not settings.TMDB_API_KEY:
+            return {}
+        
+        result = {}
+        
+        try:
+            # 1. Movie Details (runtime, countries, companies, original_title)
+            details_url = f"{TmdbService.BASE_URL}/movie/{movie_id}"
+            params = {"api_key": settings.TMDB_API_KEY, "language": "es-MX"}
+            resp = requests.get(details_url, params=params, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            result["original_title"] = data.get("original_title", "")
+            result["runtime"] = data.get("runtime")  # in minutes
+            
+            countries = data.get("production_countries", [])
+            result["countries"] = ", ".join([c.get("name", "") for c in countries[:2]])
+            
+            companies = data.get("production_companies", [])
+            result["companies_list"] = [{"name": c.get("name", ""), "id": c.get("id")} for c in companies[:5]]
+            result["companies"] = ", ".join([c.get("name", "") for c in companies[:5]])
+            
+            distributors = [c.get("name", "") for c in companies if c.get("origin_country") in ("US", "GB", "ES", "MX")]
+            result["distributor"] = distributors[0] if distributors else (companies[0].get("name", "") if companies else "")
+            
+        except Exception as e:
+            logger.warning(f"TMDB details fetch failed: {e}")
+        
+        try:
+            # 2. Credits (director, screenplay, cast)
+            credits_url = f"{TmdbService.BASE_URL}/movie/{movie_id}/credits"
+            params = {"api_key": settings.TMDB_API_KEY, "language": "es-MX"}
+            resp = requests.get(credits_url, params=params, timeout=10)
+            resp.raise_for_status()
+            credits = resp.json()
+            
+            crew = credits.get("crew", [])
+            
+            # Store as list of {name, id} dicts for link generation
+            directors = [{"name": p["name"], "id": p["id"]} for p in crew if p.get("job") == "Director"]
+            result["directors"] = directors[:2]
+            result["director"] = ", ".join([d["name"] for d in directors[:2]])
+            
+            writers = [p["name"] for p in crew if p.get("job") in ("Screenplay", "Writer", "Story")]
+            result["screenplay"] = ", ".join(list(dict.fromkeys(writers))[:3])
+            
+            composers = [{"name": p["name"], "id": p["id"]} for p in crew if p.get("job") == "Original Music Composer"]
+            result["composers"] = composers[:2]
+            result["music"] = ", ".join([c["name"] for c in composers[:2]])
+            
+            dops = [{"name": p["name"], "id": p["id"]} for p in crew if p.get("job") == "Director of Photography"]
+            result["dops"] = dops[:1]
+            result["photography"] = ", ".join([d["name"] for d in dops[:1]])
+            
+            # Lead actor for hashtag (just the top 1)
+            cast = credits.get("cast", [])
+            if cast:
+                result["lead_actor"] = cast[0].get("name", "")
+            
+        except Exception as e:
+            logger.warning(f"TMDB credits fetch failed: {e}")
+        
+        return result
 
     @staticmethod
     def get_trailer(movie_id: int) -> Optional[str]:

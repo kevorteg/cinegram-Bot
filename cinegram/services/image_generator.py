@@ -5,180 +5,145 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from io import BytesIO
 from cinegram.config import settings
 
+
+def _load_font(size: int):
+    """Try configured font, fallback to arial, then default."""
+    try:
+        font_path = settings.DEFAULT_FONT_PATH
+        if not os.path.exists(font_path):
+            font_path = "arial.ttf"
+        return ImageFont.truetype(font_path, size)
+    except IOError:
+        return ImageFont.load_default()
+
+
+def _draw_shadow(base: Image.Image, x: int, y: int, w: int, h: int):
+    """Draw a soft shadow behind a rectangle area on the base image."""
+    shadow_layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow_layer)
+    offset = settings.POSTER_SHADOW_OFFSET
+    blur = settings.POSTER_SHADOW_BLUR
+    # Draw shadow rectangle
+    shadow_draw.rounded_rectangle(
+        [x + offset, y + offset, x + w + offset, y + h + offset],
+        radius=12,
+        fill=(0, 0, 0, 160)
+    )
+    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(blur))
+    return Image.alpha_composite(base, shadow_layer)
+
+
 class ImageGenerator:
     @staticmethod
     def generate_poster(image_url: str, title: str, description: str) -> str:
         """
-        Generates a 1920x1080 poster with title and description overlay.
+        Generates a 1920x1080 split-style poster:
+        - Left: movie poster with shadow
+        - Right: title, metadata, synopsis
+        - Background: solid dark color
         Returns the path to the generated image.
         """
-        # 1. Download or Load Image
+        target_w, target_h = settings.IMAGE_SIZE
+
+        # 1. Download poster image
         try:
             response = requests.get(image_url, timeout=10)
             response.raise_for_status()
-            img = Image.open(BytesIO(response.content)).convert("RGBA")
+            poster = Image.open(BytesIO(response.content)).convert("RGBA")
         except Exception as e:
             print(f"Error loading image: {e}")
-            # Create a black placeholder if image download fails
-            img = Image.new("RGBA", (1920, 1080), (0, 0, 0, 255))
+            poster = Image.new("RGBA", (500, 750), (30, 30, 30, 255))
 
-        # 2. Smart Composition: Blurred Background + Centered Poster
-        target_size = settings.IMAGE_SIZE # (1920, 1080)
-        
-        # A. Create Background (Blurred & Darkened)
-        # Resize to FILL the screen (Aspect Fill)
-        img_ratio = img.width / img.height
-        target_ratio = target_size[0] / target_size[1]
+        # 2. Create dark background
+        canvas = Image.new("RGBA", (target_w, target_h), settings.POSTER_BG_COLOR + (255,))
 
-        if img_ratio > target_ratio:
-            # Image is wider than screen, resize by height
-            bg_height = target_size[1]
-            bg_width = int(bg_height * img_ratio)
-        else:
-            # Image is taller/narrower, resize by width to fill width
-            bg_width = target_size[0]
-            bg_height = int(bg_width / img_ratio)
+        # 3. Calculate poster area (left side)
+        poster_area_w = int(target_w * settings.POSTER_LEFT_WIDTH)
+        poster_max_w = poster_area_w - settings.POSTER_MARGIN * 2
+        poster_max_h = target_h - settings.POSTER_MARGIN * 2
 
-        background = img.resize((bg_width, bg_height), Image.Resampling.LANCZOS)
-        
-        # Center Crop the background to fit 1920x1080 exactly
-        left = (background.width - target_size[0]) / 2
-        top = (background.height - target_size[1]) / 2
-        right = (background.width + target_size[0]) / 2
-        bottom = (background.height + target_size[1]) / 2
-        background = background.crop((left, top, right, bottom))
-        
-        # Apply Heavy Blur
-        background = background.filter(ImageFilter.GaussianBlur(30))
-        
-        # Darken Background significantly to make text pop
-        dark_layer = Image.new("RGBA", target_size, (0, 0, 0, 120))
-        background = Image.alpha_composite(background, dark_layer)
+        # Scale poster to fit (aspect fit)
+        scale = min(poster_max_w / poster.width, poster_max_h / poster.height)
+        new_w = int(poster.width * scale)
+        new_h = int(poster.height * scale)
+        poster_resized = poster.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-        # B. Create Foreground (Fitted Poster)
-        # Resize to FIT inside the screen (Aspect Fit) - maximize height usually
-        # Give it a slight margin so it doesn't touch edges (e.g. 95% height)
-        max_h = int(target_size[1] * 0.95)
-        max_w = int(target_size[0] * 0.95)
-        
-        scale = min(max_w / img.width, max_h / img.height)
-        new_w = int(img.width * scale)
-        new_h = int(img.height * scale)
-        
-        foreground = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        
-        # Paste Foreground Center
-        x_pos = (target_size[0] - new_w) // 2
-        y_pos = (target_size[1] - new_h) // 2
-        
-        # Add shadow to foreground? (Optional, implies creating a larger shadow layer)
-        # For simplicity, just paste.
-        background.paste(foreground, (x_pos, y_pos))
-        
-        # Update main img reference
-        img = background
+        # Center poster in left area
+        poster_x = (poster_area_w - new_w) // 2
+        poster_y = (target_h - new_h) // 2
 
-        # 3. Add Dark Overlay (Gradient or solid semi-transparent)
-        overlay = Image.new("RGBA", target_size, (0, 0, 0, 0))
-        draw = ImageDraw.Draw(overlay)
-        # Gradient from bottom 60% to bottom
-        for y in range(int(target_size[1] * 0.4), target_size[1]):
-            alpha = int(255 * ((y - target_size[1] * 0.4) / (target_size[1] * 0.6)))
-            draw.line([(0, y), (target_size[0], y)], fill=(0, 0, 0, alpha))
-        
-        img = Image.alpha_composite(img, overlay)
+        # 4. Draw shadow behind poster
+        canvas = _draw_shadow(canvas, poster_x, poster_y, new_w, new_h)
 
-        # 4. Add Text
-        draw = ImageDraw.Draw(img)
-        
-        # Load Font
-        try:
-            # Try configured font, fallback to Arial if on Windows/generic
-            font_path = settings.DEFAULT_FONT_PATH
-            if not os.path.exists(font_path):
-                font_path = "arial.ttf" # Common on Windows
-            
-            title_font = ImageFont.truetype(font_path, 80)
-            desc_font = ImageFont.truetype(font_path, 40)
-        except IOError:
-            # Fallback to default if load fails
-            title_font = ImageFont.load_default()
-            desc_font = ImageFont.load_default()
+        # 5. Add rounded corners to poster (optional visual polish)
+        # Create a mask for rounded corners
+        mask = Image.new("L", (new_w, new_h), 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.rounded_rectangle([0, 0, new_w - 1, new_h - 1], radius=10, fill=255)
 
-        # Text Positioning
-        margin_x = 100
-        bottom_margin = 60  # Minimum gap from the bottom edge
-        title_line_h = 90
-        desc_line_h = 50
+        # Paste poster with mask
+        canvas.paste(poster_resized, (poster_x, poster_y), mask)
 
-        # Wrap title and description text
-        title_lines = textwrap.wrap(title, width=25)
-        clean_desc = (description[:400] + '...') if len(description) > 400 else description
-        desc_lines = textwrap.wrap(clean_desc, width=70)
+        # 6. Draw text on right side
+        draw = ImageDraw.Draw(canvas)
 
-        # Calculate total height needed for title block
-        title_block_h = len(title_lines) * title_line_h
+        text_x = poster_area_w + settings.POSTER_TEXT_MARGIN_LEFT
 
-        # Available space for description (below title, above bottom margin)
-        # We give the title block approx 40% from bottom
-        title_start_y = target_size[1] - bottom_margin - title_block_h - 20 - (len(desc_lines) * desc_line_h)
+        title_font = _load_font(settings.POSTER_TITLE_SIZE)
+        desc_font = _load_font(settings.POSTER_DESC_SIZE)
 
-        # Clamp so title never starts too high or below the safe zone
-        min_title_y = int(target_size[1] * 0.45)
-        title_start_y = max(title_start_y, min_title_y)
+        # --- Title ---
+        title_lines = textwrap.wrap(title, width=28)
+        title_line_h = settings.POSTER_TITLE_SIZE + 10
 
-        # Limit desc lines to those that actually fit
-        available_desc_h = target_size[1] - bottom_margin - title_start_y - title_block_h - 20
-        max_desc_lines = max(1, available_desc_h // desc_line_h)
-        desc_lines = desc_lines[:max_desc_lines]
+        # Start title vertically centered relative to poster
+        text_start_y = max(poster_y, int(target_h * 0.15))
 
-        # Draw Title
-        current_y = title_start_y
+        current_y = text_start_y
         for line in title_lines:
-            draw.text((margin_x, current_y), line, font=title_font, fill="white")
+            draw.text((text_x, current_y), line, font=title_font, fill="white")
             current_y += title_line_h
 
-        # Draw Description (Synopsis)
+        # --- Synopsis ---
         current_y += 20
-        for line in desc_lines:
-            draw.text((margin_x, current_y), line, font=desc_font, fill=(200, 200, 200))
-            current_y += desc_line_h
+        clean_desc = (description[:500] + "...") if len(description) > 500 else description
+        desc_lines = textwrap.wrap(clean_desc, width=55)
 
-        # Draw Logo Watermark (Top Right)
+        # Limit to available space
+        available_h = target_h - 100 - current_y  # bottom margin
+        max_desc_lines = max(1, available_h // (settings.POSTER_DESC_SIZE + 8))
+        desc_lines = desc_lines[:max_desc_lines]
+
+        for line in desc_lines:
+            draw.text((text_x, current_y), line, font=desc_font, fill=(180, 180, 180))
+            current_y += settings.POSTER_DESC_SIZE + 8
+
+        # 7. Logo Watermark (top right)
         try:
             logo_path = os.path.join(settings.ASSETS_DIR, "logo", "logo.png")
             if os.path.exists(logo_path):
                 logo = Image.open(logo_path).convert("RGBA")
-                
-                # Resize logo (e.g., width 300px, maintain aspect)
-                target_logo_width = 300
+                target_logo_w = 250
                 logo_ratio = logo.height / logo.width
-                target_logo_height = int(target_logo_width * logo_ratio)
-                logo = logo.resize((target_logo_width, target_logo_height), Image.Resampling.LANCZOS)
-                
-                # Position: Top Right with margin
-                margin = 50
-                logo_x = target_size[0] - target_logo_width - margin
-                logo_y = margin
-                
-                img.paste(logo, (logo_x, logo_y), logo)
+                target_logo_h = int(target_logo_w * logo_ratio)
+                logo = logo.resize((target_logo_w, target_logo_h), Image.Resampling.LANCZOS)
+                logo_x = target_w - target_logo_w - 40
+                logo_y = 40
+                canvas.paste(logo, (logo_x, logo_y), logo)
             else:
-                # Fallback to Text if logo file missing
-                watermark_text = "CINEGRAM 🎬"
-                wm_font_size = 60
-                wm_font = ImageFont.truetype(font_path, wm_font_size) if 'font_path' in locals() else ImageFont.load_default()
-                wm_bbox = draw.textbbox((0, 0), watermark_text, font=wm_font)
-                wm_x = target_size[0] - (wm_bbox[2] - wm_bbox[0]) - 50
-                wm_y = 50
-                draw.text((wm_x + 3, wm_y + 3), watermark_text, font=wm_font, fill="black")
-                draw.text((wm_x, wm_y), watermark_text, font=wm_font, fill=(255, 215, 0))
-                
+                wm_text = "CINEGRAM"
+                wm_font = _load_font(50)
+                wm_bbox = draw.textbbox((0, 0), wm_text, font=wm_font)
+                wm_x = target_w - (wm_bbox[2] - wm_bbox[0]) - 40
+                wm_y = 45
+                draw.text((wm_x + 2, wm_y + 2), wm_text, font=wm_font, fill="black")
+                draw.text((wm_x, wm_y), wm_text, font=wm_font, fill=(255, 215, 0))
         except Exception as e:
             print(f"Error adding watermark: {e}")
 
-        # 5. Save
+        # 8. Save
         output_path = os.path.join(settings.TEMP_DIR, f"{title[:10].replace(' ', '_')}_poster.jpg")
-        img = img.convert("RGB") # Remove alpha for JPG
-        img.save(output_path, quality=95)
-        
+        canvas = canvas.convert("RGB")
+        canvas.save(output_path, quality=95)
+
         return output_path

@@ -85,6 +85,7 @@ def main():
     application.add_handler(CommandHandler("clearfailed", clear_failed_command))
     application.add_handler(CommandHandler("stats", stats_handler.stats_command))
     application.add_handler(CommandHandler("today", stats_handler.today_command))
+    application.add_handler(CommandHandler("reporte", stats_handler.reporte_command))
 
     # --- Callback Queries ---
     application.add_handler(CallbackQueryHandler(search_handler.handle_search_callback, pattern="^TMDB_"))

@@ -128,17 +128,28 @@ async def handle_approval_callback(update: Update, context: ContextTypes.DEFAULT
         search_title = parsed.get("title", filename)
         extracted_year = parsed.get("year")
 
-        await process_movie_upload(update, context, message, video, search_title, extracted_year)
-
-        # Notify submitter
         try:
+            await process_movie_upload(update, context, message, video, search_title, extracted_year)
+            # Notify submitter
             await context.bot.send_message(
                 chat_id=entry["user_id"],
                 text=f"🎉 *¡Tu video fue aprobado y publicado en el canal!*\nGracias por contribuir 🙌",
                 parse_mode="Markdown"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Approval processing failed for @{entry['username']}: {e}")
+            await query.edit_message_text(
+                text=f"❌ *Error al publicar* el video de @{entry['username']}:\n`{str(e)[:200]}`",
+                parse_mode="Markdown"
+            )
+            try:
+                await context.bot.send_message(
+                    chat_id=entry["user_id"],
+                    text=f"😔 Tu video fue aprobado pero falló al publicarse. El administrador lo revisará.",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
 
     elif data.startswith("REJECT_"):
         appr_id = data.split("REJECT_")[1]

@@ -1,0 +1,18 @@
+[Unit]
+Description=CineGram Telegram Bot
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/CineGram
+ExecStart=/home/ubuntu/CineGram/venv/bin/python -m cinegram.bot
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

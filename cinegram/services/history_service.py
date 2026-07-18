@@ -52,3 +52,17 @@ class HistoryService:
         movies = [row[0] for row in cursor.fetchall()]
         conn.close()
         return movies
+
+    @staticmethod
+    def get_today_detailed():
+        """Returns list of {title, published_at} for movies in the last 24 hours."""
+        conn = DbService.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT title, published_at FROM history 
+            WHERE published_at >= datetime('now', '-1 day')
+            ORDER BY published_at ASC
+        """)
+        movies = [{"title": row[0], "published_at": row[1]} for row in cursor.fetchall()]
+        conn.close()
+        return movies
